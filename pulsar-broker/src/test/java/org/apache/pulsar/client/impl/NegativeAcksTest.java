@@ -121,31 +121,43 @@ public class NegativeAcksTest extends ProducerConsumerBase {
                 .enableBatching(batching)
                 .create();
 
-        Set<String> sentMessages = new HashSet<>();
+        Set<String> nackedMessages = new HashSet<>();
 
+        // Publish some messages to positively and negatively acknowledge
         final int N = 10;
-        for (int i = 0; i < N; i++) {
-            String value = "test-" + i;
+        final int A = 10;
+        for (int i = 0; i < A; i++) {
+            String value = "positive-" + i;
             producer.sendAsync(value);
-            sentMessages.add(value);
+        }
+        for (int i = 0; i < N; i++) {
+            String value = "negative-" + i;
+            producer.sendAsync(value);
         }
         producer.flush();
 
-        for (int i = 0; i < N; i++) {
+        // Negatively acknowledge messages starting with "negative"; acknowledge the rest
+        for (int i = 0; i < N + A; i++) {
             Message<String> msg = consumer.receive();
-            consumer.negativeAcknowledge(msg);
+            String value = msg.getValue();
+            if (value.startsWith("negative")) {
+                consumer.negativeAcknowledge(msg);
+                nackedMessages.add(value);
+            } else {
+                consumer.acknowledge(msg);
+            }
         }
 
         Set<String> receivedMessages = new HashSet<>();
 
-        // All the messages should be received again
+        // Only the negatively acknowledged messages should be received again
         for (int i = 0; i < N; i++) {
             Message<String> msg = consumer.receive();
             receivedMessages.add(msg.getValue());
             consumer.acknowledge(msg);
         }
 
-        assertEquals(receivedMessages, sentMessages);
+        assertEquals(receivedMessages, nackedMessages);
 
         // There should be no more messages
         assertNull(consumer.receive(100, TimeUnit.MILLISECONDS));
